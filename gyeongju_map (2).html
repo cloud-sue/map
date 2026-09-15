@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>경주 2박 3일 여행 지도</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body {
+            display: flex;
+            margin: 0;
+        }
+        #sidebar {
+            width: 300px;
+            height: 100vh;
+            overflow-y: auto;
+            background: #f8f9fa;
+            padding: 10px;
+        }
+        #map {
+            flex-grow: 1;
+            height: 100vh;
+        }
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+        .tab {
+            flex: 1;
+            padding: 6px 0;
+            border: 1px solid #ccc;
+            background: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        .tab.active {
+            background: #333;
+            color: #fff;
+            border-color: #333;
+        }
+        .day-title {
+            font-weight: bold;
+            margin: 14px 0 6px;
+            padding-left: 6px;
+            border-left: 4px solid;
+        }
+        .restaurant {
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .restaurant.disabled {
+            cursor: default;
+            opacity: 0.6;
+        }
+        .restaurant-name {
+            font-weight: bold;
+        }
+        .restaurant-menu {
+            font-size: 0.9em;
+            color: #555;
+        }
+        .pin {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            color: #fff;
+            font-size: 11px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div class="tabs">
+            <button class="tab active" data-day="all">전체</button>
+            <button class="tab" data-day="1">1일차</button>
+            <button class="tab" data-day="2">2일차</button>
+            <button class="tab" data-day="3">3일차</button>
+        </div>
+        <div id="list"></div>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const DAY_COLORS = { 1: "#1F6F8B", 2: "#D9372B", 3: "#5E7F3A" };
+
+        // 좌표 출처: Google Places 검색 결과 (명티 플래그십 스토어는 검색되지 않아 좌표 없음)
+        const places = [
+            // 1일차
+            { day: 1, name: "소노캄 경주", memo: "09:30 체크인 먼저 / 17:00 숙소 복귀", lat: 35.8466826, lon: 129.2816689 },
+            { day: 1, name: "경주월드", memo: "오전~오후 / 10월 1일 로카 라이킷 1.2 제휴카드로 예매", lat: 35.8365085, lon: 129.2822318 },
+            { day: 1, name: "한식당 소담", memo: "저녁 / 소노캄 내부, 휴식 후 저녁 식사", lat: 35.8462387, lon: 129.2822235 },
+            { day: 1, name: "동궁과 월지", memo: "야간 / 21시 이전 복귀 기준 / 복귀 후 BBQ 있으면 치맥, 없으면 편의점 맥주", lat: 35.8348173, lon: 129.2265645 },
+
+            // 2일차
+            { day: 2, name: "황룡사지", memo: "낮 / 코스모스 & 청보리 (08:40 조식 후 출발, 14:00 복귀)", lat: 35.8374368, lon: 129.2327585 },
+            { day: 2, name: "분황사", memo: "낮 / 분황사지 황화코스모스", lat: 35.840482, lon: 129.2344245 },
+            { day: 2, name: "월정교", memo: "16:00 스파 이후 산책 코스 시작", lat: 35.8291928, lon: 129.2181213, walk: true },
+            { day: 2, name: "교촌마을", memo: "산책 코스", lat: 35.8295398, lon: 129.2148298, walk: true },
+            { day: 2, name: "경주향교", memo: "산책 코스", lat: 35.831237, lon: 129.2169915, walk: true },
+            { day: 2, name: "경주월성", memo: "산책 코스", lat: 35.8324055, lon: 129.2238957, walk: true },
+            { day: 2, name: "계림", memo: "산책 코스", lat: 35.8322427, lon: 129.2173376, walk: true },
+            { day: 2, name: "석빙고", memo: "산책 코스", lat: 35.8330464, lon: 129.2238709, walk: true },
+            { day: 2, name: "첨성대", memo: "산책 코스 종료 / 저녁 식사 후 복귀", lat: 35.8347306, lon: 129.2190014, walk: true },
+
+            // 3일차
+            { day: 3, name: "황리단길", memo: "체크아웃 후 / 경주 얼굴빵", lat: 35.8376609, lon: 129.209724 },
+            { day: 3, name: "명티 플래그십 스토어", memo: "황리단길 내 (위치 미확인)", lat: null, lon: null },
+            { day: 3, name: "대릉원", memo: "얼굴빵 사진", lat: 35.8381282, lon: 129.2108206 },
+            { day: 3, name: "백일홍 꽃밭 (황남동 고분군)", memo: "낮 / 황리단길과 가까움 / 점심 후 16:00 부산 출발", lat: 35.8317822, lon: 129.2106171 }
+        ];
+
+        // 원본 맛집 지도와 동일하게 줌 16으로 시작 (2일차 산책 코스 중심)
+        const map = L.map("map").setView([35.8322, 129.2190], 16);
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        const layers = { 1: L.layerGroup(), 2: L.layerGroup(), 3: L.layerGroup() };
+        const list = document.getElementById("list");
+        const counters = { 1: 0, 2: 0, 3: 0 };
+        const dayHeaders = {};
+
+        places.forEach((p) => {
+            const color = DAY_COLORS[p.day];
+            const hasCoord = p.lat !== null;
+            if (hasCoord) counters[p.day] += 1;
+            const n = hasCoord ? counters[p.day] : "–";
+
+            if (!dayHeaders[p.day]) {
+                const h = document.createElement("div");
+                h.className = "day-title";
+                h.dataset.day = p.day;
+                h.style.borderColor = color;
+                h.innerText = `${p.day}일차`;
+                list.appendChild(h);
+                dayHeaders[p.day] = h;
+            }
+
+            let marker = null;
+            if (hasCoord) {
+                marker = L.marker([p.lat, p.lon], {
+                    icon: L.divIcon({
+                        className: "",
+                        html: `<div class="pin" style="background:${color}">${n}</div>`,
+                        iconSize: [22, 22],
+                        iconAnchor: [11, 11],
+                        popupAnchor: [0, -12]
+                    })
+                }).bindPopup(`<b>${p.day}일차 ${n}. ${p.name}</b><br>${p.memo}`);
+                layers[p.day].addLayer(marker);
+            }
+
+            const div = document.createElement("div");
+            div.className = "restaurant" + (hasCoord ? "" : " disabled");
+            div.dataset.day = p.day;
+
+            const nameDiv = document.createElement("div");
+            nameDiv.className = "restaurant-name";
+            nameDiv.innerText = `${n}. ${p.name}`;
+            nameDiv.style.color = color;
+
+            const menuDiv = document.createElement("div");
+            menuDiv.className = "restaurant-menu";
+            menuDiv.innerText = p.memo;
+
+            div.appendChild(nameDiv);
+            div.appendChild(menuDiv);
+
+            if (marker) {
+                div.addEventListener("click", () => {
+                    if (!map.hasLayer(layers[p.day])) layers[p.day].addTo(map);
+                    map.setView([p.lat, p.lon], 16);
+                    marker.openPopup();
+                });
+            }
+            list.appendChild(div);
+        });
+
+        // 2일차 산책 코스 연결선 (월정교 → 첨성대, 순서 표시용 직선)
+        const walkLine = places.filter((p) => p.walk).map((p) => [p.lat, p.lon]);
+        L.polyline(walkLine, { color: DAY_COLORS[2], weight: 3, dashArray: "6 6", opacity: 0.8 }).addTo(layers[2]);
+
+        Object.values(layers).forEach((l) => l.addTo(map));
+
+        function showDay(day) {
+            document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.day === day));
+            document.querySelectorAll("#list [data-day]").forEach((el) => {
+                el.style.display = day === "all" || el.dataset.day === day ? "" : "none";
+            });
+
+            const bounds = [];
+            Object.entries(layers).forEach(([d, layer]) => {
+                const visible = day === "all" || d === day;
+                if (visible) {
+                    layer.addTo(map);
+                    places.filter((p) => String(p.day) === d && p.lat !== null).forEach((p) => bounds.push([p.lat, p.lon]));
+                } else {
+                    map.removeLayer(layer);
+                }
+            });
+            if (day !== "all" && bounds.length) map.fitBounds(bounds, { padding: [30, 30], maxZoom: 17 });
+        }
+
+        document.querySelectorAll(".tab").forEach((t) => {
+            t.addEventListener("click", () => showDay(t.dataset.day));
+        });
+
+        // 임베드 영역 크기가 늦게 잡히는 경우 타일이 비어 보이지 않도록 재계산
+        window.addEventListener("load", () => map.invalidateSize());
+        window.addEventListener("resize", () => map.invalidateSize());
+        setTimeout(() => map.invalidateSize(), 500);
+    </script>
+</body>
+</html>
